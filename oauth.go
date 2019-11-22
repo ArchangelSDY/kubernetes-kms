@@ -67,66 +67,7 @@ type Config struct {
 
 	// The name of the resource group that the cluster is deployed in
 	ResourceGroup string `json:"resourceGroup" yaml:"resourceGroup"`
-	// The location of the resource group that the cluster is deployed in
-	Location string `json:"location" yaml:"location"`
-	// The name of the VNet that the cluster is deployed in
-	VnetName string `json:"vnetName" yaml:"vnetName"`
-	// The name of the resource group that the Vnet is deployed in
-	VnetResourceGroup string `json:"vnetResourceGroup" yaml:"vnetResourceGroup"`
-	// The name of the subnet that the cluster is deployed in
-	SubnetName string `json:"subnetName" yaml:"subnetName"`
-	// The name of the security group attached to the cluster's subnet
-	SecurityGroupName string `json:"securityGroupName" yaml:"securityGroupName"`
-	// (Optional in 1.6) The name of the route table attached to the subnet that the cluster is deployed in
-	RouteTableName string `json:"routeTableName" yaml:"routeTableName"`
-	// (Optional) The name of the availability set that should be used as the load balancer backend
-	// If this is set, the Azure cloudprovider will only add nodes from that availability set to the load
-	// balancer backend pool. If this is not set, and multiple agent pools (availability sets) are used, then
-	// the cloudprovider will try to add all nodes to a single backend pool which is forbidden.
-	// In other words, if you use multiple agent pools (availability sets), you MUST set this field.
-	PrimaryAvailabilitySetName string `json:"primaryAvailabilitySetName" yaml:"primaryAvailabilitySetName"`
-	// The type of azure nodes. Candidate values are: vmss and standard.
-	// If not set, it will be default to standard.
-	VMType string `json:"vmType" yaml:"vmType"`
-	// The name of the scale set that should be used as the load balancer backend.
-	// If this is set, the Azure cloudprovider will only add nodes from that scale set to the load
-	// balancer backend pool. If this is not set, and multiple agent pools (scale sets) are used, then
-	// the cloudprovider will try to add all nodes to a single backend pool which is forbidden.
-	// In other words, if you use multiple agent pools (scale sets), you MUST set this field.
-	PrimaryScaleSetName string `json:"primaryScaleSetName" yaml:"primaryScaleSetName"`
-	// Enable exponential backoff to manage resource request retries
-	CloudProviderBackoff bool `json:"cloudProviderBackoff" yaml:"cloudProviderBackoff"`
-	// Backoff retry limit
-	CloudProviderBackoffRetries int `json:"cloudProviderBackoffRetries" yaml:"cloudProviderBackoffRetries"`
-	// Backoff exponent
-	CloudProviderBackoffExponent float64 `json:"cloudProviderBackoffExponent" yaml:"cloudProviderBackoffExponent"`
-	// Backoff duration
-	CloudProviderBackoffDuration int `json:"cloudProviderBackoffDuration" yaml:"cloudProviderBackoffDuration"`
-	// Backoff jitter
-	CloudProviderBackoffJitter float64 `json:"cloudProviderBackoffJitter" yaml:"cloudProviderBackoffJitter"`
-	// Enable rate limiting
-	CloudProviderRateLimit bool `json:"cloudProviderRateLimit" yaml:"cloudProviderRateLimit"`
-	// Rate limit QPS (Read)
-	CloudProviderRateLimitQPS float32 `json:"cloudProviderRateLimitQPS" yaml:"cloudProviderRateLimitQPS"`
-	// Rate limit Bucket Size
-	CloudProviderRateLimitBucket int `json:"cloudProviderRateLimitBucket" yaml:"cloudProviderRateLimitBucket"`
-	// Rate limit QPS (Write)
-	CloudProviderRateLimitQPSWrite float32 `json:"cloudProviderRateLimitQPSWrite" yaml:"cloudProviderRateLimitQPSWrite"`
-	// Rate limit Bucket Size
-	CloudProviderRateLimitBucketWrite int `json:"cloudProviderRateLimitBucketWrite" yaml:"cloudProviderRateLimitBucketWrite"`
 
-	// Use instance metadata service where possible
-	UseInstanceMetadata bool `json:"useInstanceMetadata" yaml:"useInstanceMetadata"`
-
-	// Sku of Load Balancer and Public IP. Candidate values are: basic and standard.
-	// If not set, it will be default to basic.
-	LoadBalancerSku string `json:"loadBalancerSku" yaml:"loadBalancerSku"`
-	// ExcludeMasterFromStandardLB excludes master nodes from standard load balancer.
-	// If not set, it will be default to true.
-	ExcludeMasterFromStandardLB *bool `json:"excludeMasterFromStandardLB" yaml:"excludeMasterFromStandardLB"`
-
-	// Maximum allowed LoadBalancer Rule Count is the limit enforced by Azure Load balancer
-	MaximumLoadBalancerRuleCount int `json:"maximumLoadBalancerRuleCount" yaml:"maximumLoadBalancerRuleCount"`
 	// The kms provider vault name
 	ProviderVaultName string `json:"providerVaultName" yaml:"providerVaultName"`
 	// The kms provider key name
