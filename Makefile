@@ -33,18 +33,14 @@ push: build-image
 
 .PHONY: clean deps test testint
 
-deps: setup
+deps: clean
 	@echo "Ensuring Dependencies..."
 	$Q go env
-	$Q dep ensure
+	$Q go mod download
 
 clean:
 	@echo "Clean..."
 	$Q rm -rf $(binary)
-
-setup: clean
-	@echo "Setup..."
-	go get -u github.com/golang/dep/cmd/dep
 
 authors:
 	$Q git log --all --format='%aN <%cE>' | sort -u  | sed -n '/github/!p' > GITAUTHORS
@@ -62,7 +58,7 @@ test:
 ifndef CI
 	@echo "Running Unit Tests outside CI..."
 	$Q go env
-	$Q dep ensure
+	$Q go mod download
 	go test -v -count=1 `go list ./... | grep -v client`
 else
 	@echo "Running Unit Tests inside CI..."
