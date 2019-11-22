@@ -90,7 +90,7 @@ func New(pathToUnixSocketFile string, configFilePath string) (*KeyManagementServ
 	keyManagementServiceServer.providerKeyName = keyName
 	keyManagementServiceServer.providerKeyVersion = keyVersion
 
-	fmt.Println(keyManagementServiceServer.pathToUnixSocket)
+	log.Println(keyManagementServiceServer.pathToUnixSocket)
 	return keyManagementServiceServer, nil
 }
 
@@ -108,7 +108,7 @@ func getKey(subscriptionID string, providerVaultName string, providerKeyName str
 
 	kvClient.Authorizer = token
 
-	fmt.Println("Verify key version from key vault ", providerKeyName, providerKeyVersion, *vaultUrl)
+	log.Println("Verify key version from key vault ", providerKeyName, providerKeyVersion, *vaultUrl)
 
 	var kid *string
 	keyBundle, err := kvClient.GetKey(*vaultUrl, providerKeyName, providerKeyVersion)
@@ -119,10 +119,10 @@ func getKey(subscriptionID string, providerVaultName string, providerKeyName str
 		// when we are not able to verify the latest key version for keyName, create key
 		kid, err = createKey(kvClient, *vaultUrl, vaultSku, providerKeyName, providerVaultName, resourceGroup, subscriptionID, configFilePath, env)
 		if err != nil {
-			fmt.Println("Err returned from createKey: ", err.Error())
+			log.Println("Err returned from createKey: ", err.Error())
 
 			if strings.Contains(err.Error(), "LeaseAlreadyPresent") {
-				fmt.Println("createKey failed LeaseAlreadyPresent")
+				log.Println("createKey failed LeaseAlreadyPresent")
 
 				t := 0
 				for t < maxRetryTimeout {
@@ -133,7 +133,7 @@ func getKey(subscriptionID string, providerVaultName string, providerKeyName str
 					} else {
 						t += retryIncrement
 						time.Sleep(retryIncrement * time.Second)
-						fmt.Printf("sleep %d secs, retry t: %d secs. ", retryIncrement, t)
+						log.Printf("sleep %d secs, retry t: %d secs. ", retryIncrement, t)
 					}
 				}
 				if t >= maxRetryTimeout {
@@ -155,7 +155,7 @@ func getKey(subscriptionID string, providerVaultName string, providerKeyName str
 		if err != nil {
 			return &kvClient, "", err
 		}
-		fmt.Println("found key version: ", version)
+		log.Println("found key version: ", version)
 		// save keyversion to azure.json
 		err = UpdateKMSProvider(configFilePath, version)
 		if err != nil {
@@ -185,7 +185,7 @@ func getVault(subscriptionID string, vaultName string, resourceGroup string, con
 }
 
 func createKey(keyClient kv.ManagementClient, vaultUrl string, vaultSku kvmgmt.SkuName, keyName string, providerVaultName string, resourceGroup string, subscriptionID string, configFilePath string, env *azure.Environment) (*string, error) {
-	fmt.Println("Key not found. Creating a new key...")
+	log.Println("Key not found. Creating a new key...")
 	storageAccountsClient := storagemgmt.NewAccountsClientWithBaseURI(env.ResourceManagerEndpoint, subscriptionID)
 	token, _ := GetManagementToken(AuthGrantType(), configFilePath)
 	storageAccountsClient.Authorizer = token
@@ -214,7 +214,7 @@ func createKey(keyClient kv.ManagementClient, vaultUrl string, vaultSku kvmgmt.S
 		return nil, err
 	}
 	if !ok {
-		fmt.Println("creating container: ", keyName)
+		log.Println("creating container: ", keyName)
 		// Create container
 		options := storage.CreateContainerOptions{
 			Access: storage.ContainerAccessTypeContainer,
@@ -228,7 +228,7 @@ func createKey(keyClient kv.ManagementClient, vaultUrl string, vaultSku kvmgmt.S
 	b := cnt.GetBlobReference(keyName)
 	ok, err = b.Exists()
 	if !ok {
-		fmt.Println("creating blob: ", keyName)
+		log.Println("creating blob: ", keyName)
 		// Create blob
 		err = b.CreateBlockBlob(nil)
 		if err != nil {
@@ -240,13 +240,13 @@ func createKey(keyClient kv.ManagementClient, vaultUrl string, vaultSku kvmgmt.S
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println("acquired lease")
+	log.Println("acquired lease")
 	// Create KV key
 	keyType := kv.RSA
 	if strings.EqualFold(string(vaultSku), string(kvmgmt.Premium)) {
 		keyType = kv.RSAHSM
 	}
-	fmt.Println("new key type: ", keyType)
+	log.Println("new key type: ", keyType)
 
 	key, err := keyClient.CreateKey(
 		vaultUrl,
@@ -265,7 +265,7 @@ func createKey(keyClient kv.ManagementClient, vaultUrl string, vaultSku kvmgmt.S
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println("Created a new kms key")
+	log.Println("Created a new kms key")
 	return key.Key.Kid, nil
 }
 
@@ -326,8 +326,8 @@ func main() {
 		for {
 			s := <-sigChan
 			if s == syscall.SIGTERM {
-				fmt.Println("force stop")
-				fmt.Println("Shutting down gRPC service...")
+				log.Println("force stop")
+				log.Println("Shutting down gRPC service...")
 				server.GracefulStop()
 				os.Exit(0)
 			}
@@ -338,7 +338,7 @@ func main() {
 }
 
 func (s *KeyManagementServiceServer) Version(ctx context.Context, request *k8spb.VersionRequest) (*k8spb.VersionResponse, error) {
-	fmt.Println(version)
+	log.Println(version)
 	return &k8spb.VersionResponse{Version: version, RuntimeName: runtime, RuntimeVersion: runtimeVersion}, nil
 }
 
