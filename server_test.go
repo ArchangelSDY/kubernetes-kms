@@ -48,10 +48,6 @@ func TestCreateInstance(t *testing.T) {
 
 	keyManagementServiceServer := new(KeyManagementServiceServer)
 	keyManagementServiceServer.pathToUnixSocket = "/tmp/azurekms.socket"
-	keyManagementServiceServer.azConfig = cred
-	keyManagementServiceServer.providerVaultName = KVTestName
-	keyManagementServiceServer.providerKeyName = KVTestKeyName
-	keyManagementServiceServer.providerKeyVersion = KVTestVersion
 
 	wanted := "72f988bf-86f1-41af-91ab-2d7cd011db47"
 	if cred.TenantID != wanted {
@@ -79,18 +75,18 @@ func TestCreateInstance(t *testing.T) {
 	}
 
 	wanted = "k8skv"
-	if *keyManagementServiceServer.providerVaultName != wanted {
-		t.Errorf("Wanted %s, got %s.", wanted, *keyManagementServiceServer.providerVaultName)
+	if *KVTestName != wanted {
+		t.Errorf("Wanted %s, got %s.", wanted, *KVTestName)
 	}
 
 	wanted = "mykey"
-	if *keyManagementServiceServer.providerKeyName != wanted {
-		t.Errorf("Wanted %s, got %s.", wanted, *keyManagementServiceServer.providerKeyName)
+	if *KVTestKeyName != wanted {
+		t.Errorf("Wanted %s, got %s.", wanted, *KVTestKeyName)
 	}
 
 	wanted = "bd497c644699475d9fb22dbbc15ba286"
-	if *keyManagementServiceServer.providerKeyVersion != wanted {
-		t.Errorf("Wanted %s, got %s.", wanted, *keyManagementServiceServer.providerKeyVersion)
+	if *KVTestVersion != wanted {
+		t.Errorf("Wanted %s, got %s.", wanted, *KVTestVersion)
 	}
 }
 

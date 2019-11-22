@@ -53,57 +53,57 @@ type AzureConfig struct {
 // KeyManagementServiceServer is a gRPC server.
 type KeyManagementServiceServer struct {
 	*grpc.Server
-	azConfig           *AzureAuthConfig
-	pathToUnixSocket   string
-	providerVaultName  *string
-	providerKeyName    *string
-	providerKeyVersion *string
+	pathToUnixSocket     string
+	providerVaultBaseUrl *string
+	providerKeyName      *string
+	providerKeyVersion   *string
 	net.Listener
-	configFilePath string
-	env            *azure.Environment
-	resourceGroup  *string
+	kvClient *kv.ManagementClient
 }
 
 // New creates an instance of the KMS Service Server.
 func New(pathToUnixSocketFile string, configFilePath string) (*KeyManagementServiceServer, error) {
 	keyManagementServiceServer := new(KeyManagementServiceServer)
 	keyManagementServiceServer.pathToUnixSocket = pathToUnixSocketFile
-	keyManagementServiceServer.configFilePath = configFilePath
-	azConfig, err := GetAzureAuthConfig(keyManagementServiceServer.configFilePath)
+	azConfig, err := GetAzureAuthConfig(configFilePath)
 	if err != nil {
 		return nil, err
 	}
-	keyManagementServiceServer.azConfig = azConfig
-	if keyManagementServiceServer.azConfig.SubscriptionID == "" {
+	if azConfig.SubscriptionID == "" {
 		return nil, fmt.Errorf("Missing SubscriptionID in azure config")
 	}
-	vaultName, keyName, keyVersion, resourceGroup, err := GetKMSProvider(keyManagementServiceServer.configFilePath)
+	vaultName, keyName, keyVersion, resourceGroup, err := GetKMSProvider(configFilePath)
 	if err != nil {
 		return nil, err
 	}
-	keyManagementServiceServer.providerVaultName = vaultName
+	env, err := GetCloudEnv(configFilePath)
+	if err != nil {
+		return nil, err
+	}
+	kvClient, vaultBaseUrl, err := getKey(azConfig.SubscriptionID, *vaultName, *keyName, *keyVersion, *resourceGroup, configFilePath, env)
+	if err != nil {
+		return nil, err
+	}
+
+	keyManagementServiceServer.kvClient = kvClient
+	keyManagementServiceServer.providerVaultBaseUrl = &vaultBaseUrl
 	keyManagementServiceServer.providerKeyName = keyName
 	keyManagementServiceServer.providerKeyVersion = keyVersion
-	keyManagementServiceServer.resourceGroup = resourceGroup
 
-	keyManagementServiceServer.env, err = GetCloudEnv(configFilePath)
-	if err != nil {
-		return nil, err
-	}
 	fmt.Println(keyManagementServiceServer.pathToUnixSocket)
 	return keyManagementServiceServer, nil
 }
 
-func getKey(subscriptionID string, providerVaultName string, providerKeyName string, providerKeyVersion string, resourceGroup string, configFilePath string, env *azure.Environment) (kv.ManagementClient, string, string, string, error) {
+func getKey(subscriptionID string, providerVaultName string, providerKeyName string, providerKeyVersion string, resourceGroup string, configFilePath string, env *azure.Environment) (*kv.ManagementClient, string, error) {
 	kvClient := kv.New()
 	kvClient.AddToUserAgent("k8s-kms-keyvault")
 	vaultUrl, vaultSku, err := getVault(subscriptionID, providerVaultName, resourceGroup, configFilePath, env)
 	if err != nil {
-		return kvClient, "", "", "", fmt.Errorf("failed to get vault, error: %v", err)
+		return &kvClient, "", fmt.Errorf("failed to get vault, error: %v", err)
 	}
 	token, err := GetKeyvaultToken(AuthGrantType(), configFilePath)
 	if err != nil {
-		return kvClient, "", "", "", fmt.Errorf("failed to get token, error: %v", err)
+		return &kvClient, "", fmt.Errorf("failed to get token, error: %v", err)
 	}
 
 	kvClient.Authorizer = token
@@ -114,7 +114,7 @@ func getKey(subscriptionID string, providerVaultName string, providerKeyName str
 	keyBundle, err := kvClient.GetKey(*vaultUrl, providerKeyName, providerKeyVersion)
 	if err != nil {
 		if providerKeyVersion != "" {
-			return kvClient, "", "", "", fmt.Errorf("failed to verify the provided key version, error: %v", err)
+			return &kvClient, "", fmt.Errorf("failed to verify the provided key version, error: %v", err)
 		}
 		// when we are not able to verify the latest key version for keyName, create key
 		kid, err = createKey(kvClient, *vaultUrl, vaultSku, providerKeyName, providerVaultName, resourceGroup, subscriptionID, configFilePath, env)
@@ -137,10 +137,10 @@ func getKey(subscriptionID string, providerVaultName string, providerKeyName str
 					}
 				}
 				if t >= maxRetryTimeout {
-					return kvClient, "", "", "", fmt.Errorf("failed to get key within the maxRetryTimeout: %d seconds", maxRetryTimeout)
+					return &kvClient, "", fmt.Errorf("failed to get key within the maxRetryTimeout: %d seconds", maxRetryTimeout)
 				}
 			} else {
-				return kvClient, "", "", "", fmt.Errorf("failed to create key, error: %v", err)
+				return &kvClient, "", fmt.Errorf("failed to create key, error: %v", err)
 			}
 		}
 	} else {
@@ -153,18 +153,18 @@ func getKey(subscriptionID string, providerVaultName string, providerKeyName str
 	if kid != nil {
 		version, err := getVersionFromKid(kid)
 		if err != nil {
-			return kvClient, "", "", "", err
+			return &kvClient, "", err
 		}
 		fmt.Println("found key version: ", version)
 		// save keyversion to azure.json
 		err = UpdateKMSProvider(configFilePath, version)
 		if err != nil {
-			return kvClient, "", "", "", err
+			return &kvClient, "", err
 		}
-		return kvClient, *vaultUrl, providerKeyName, version, nil
+		return &kvClient, *vaultUrl, nil
 	}
 
-	return kvClient, *vaultUrl, providerKeyName, providerKeyVersion, nil
+	return &kvClient, *vaultUrl, nil
 }
 
 func getVaultsClient(subscriptionID string, configFilePath string, env *azure.Environment) kvmgmt.VaultsClient {
@@ -284,54 +284,6 @@ func getVersionFromKid(kid *string) (version string, err error) {
 	return version, nil
 }
 
-// doEncrypt encrypts with an existing key
-func doEncrypt(ctx context.Context, data []byte, subscriptionID string, providerVaultName string, providerKeyName string, providerKeyVersion string, resourceGroup string, configFilePath string, env *azure.Environment, s *KeyManagementServiceServer) (*string, error) {
-	kvClient, vaultBaseUrl, keyName, keyVersion, err := getKey(subscriptionID, providerVaultName, providerKeyName, providerKeyVersion, resourceGroup, configFilePath, env)
-	value := base64.RawURLEncoding.EncodeToString(data)
-	if err != nil {
-		log.Println("doEncrypt failed")
-		return nil, err
-	}
-	if providerKeyVersion == "" {
-		s.providerKeyVersion = &keyVersion
-	}
-	parameter := kv.KeyOperationsParameters{
-		Algorithm: kv.RSA15,
-		Value:     &value,
-	}
-
-	result, err := kvClient.Encrypt(vaultBaseUrl, keyName, keyVersion, parameter)
-	if err != nil {
-		fmt.Println("Failed to encrypt, error: ", err)
-		return nil, err
-	}
-	return result.Result, nil
-}
-
-// doDecrypt decrypts with an existing key
-func doDecrypt(ctx context.Context, data string, subscriptionID string, providerVaultName string, providerKeyName string, providerKeyVersion string, resourceGroup string, configFilePath string, env *azure.Environment, s *KeyManagementServiceServer) ([]byte, error) {
-	kvClient, vaultBaseUrl, keyName, keyVersion, err := getKey(subscriptionID, providerVaultName, providerKeyName, providerKeyVersion, resourceGroup, configFilePath, env)
-	if err != nil {
-		log.Println("doDecrypt failed")
-		return nil, err
-	}
-	if providerKeyVersion == "" {
-		s.providerKeyVersion = &keyVersion
-	}
-	parameter := kv.KeyOperationsParameters{
-		Algorithm: kv.RSA15,
-		Value:     &data,
-	}
-
-	result, err := kvClient.Decrypt(vaultBaseUrl, keyName, keyVersion, parameter)
-	if err != nil {
-		fmt.Println("failed to decrypt, error: ", err)
-		return nil, err
-	}
-	bytes, err := base64.RawURLEncoding.DecodeString(*result.Result)
-	return bytes, nil
-}
-
 func main() {
 	sigChan := make(chan os.Signal, 1)
 	// register for SIGTERM (docker)
@@ -391,22 +343,43 @@ func (s *KeyManagementServiceServer) Version(ctx context.Context, request *k8spb
 }
 
 func (s *KeyManagementServiceServer) Encrypt(ctx context.Context, request *k8spb.EncryptRequest) (*k8spb.EncryptResponse, error) {
-
 	log.Println("Processing EncryptRequest: ")
-	cipher, err := doEncrypt(ctx, request.Plain, s.azConfig.SubscriptionID, *(s.providerVaultName), *(s.providerKeyName), *(s.providerKeyVersion), *(s.resourceGroup), s.configFilePath, s.env, s)
+
+	value := base64.RawURLEncoding.EncodeToString(request.Plain)
+	parameter := kv.KeyOperationsParameters{
+		Algorithm: kv.RSA15,
+		Value:     &value,
+	}
+
+	result, err := s.kvClient.Encrypt(*s.providerVaultBaseUrl, *s.providerKeyName, *s.providerKeyVersion, parameter)
 	if err != nil {
-		fmt.Println("failed to doencrypt, error: ", err)
+		log.Println("Failed to encrypt, error: ", err)
 		return &k8spb.EncryptResponse{}, err
 	}
+
+	cipher := result.Result
 	return &k8spb.EncryptResponse{Cipher: []byte(*cipher)}, nil
 }
 
 func (s *KeyManagementServiceServer) Decrypt(ctx context.Context, request *k8spb.DecryptRequest) (*k8spb.DecryptResponse, error) {
-
 	log.Println("Processing DecryptRequest: ")
-	plain, err := doDecrypt(ctx, string(request.Cipher), s.azConfig.SubscriptionID, *(s.providerVaultName), *(s.providerKeyName), *(s.providerKeyVersion), *(s.resourceGroup), s.configFilePath, s.env, s)
+
+	cipher := string(request.Cipher)
+
+	parameter := kv.KeyOperationsParameters{
+		Algorithm: kv.RSA15,
+		Value:     &cipher,
+	}
+
+	result, err := s.kvClient.Decrypt(*s.providerVaultBaseUrl, *s.providerKeyName, *s.providerKeyVersion, parameter)
 	if err != nil {
-		fmt.Println("failed to decrypt, error: ", err)
+		log.Println("failed to decrypt, error: ", err)
+		return &k8spb.DecryptResponse{}, err
+	}
+
+	plain, err := base64.RawURLEncoding.DecodeString(*result.Result)
+	if err != nil {
+		log.Println("failed to decode, error: ", err)
 		return &k8spb.DecryptResponse{}, err
 	}
 	return &k8spb.DecryptResponse{Plain: plain}, nil
